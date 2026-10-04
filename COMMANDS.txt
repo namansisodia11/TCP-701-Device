@@ -1,0 +1,226 @@
+TCP-701 COMMAND LOG  (device serial BB900021, firmware 0004)
+============================================================
+One entry per command. "Device answer" is filled in as each command is tested on the real device.
+Status: [TESTED] = confirmed on device, [NOT TESTED] = not tried yet, [NO REPLY] = device ignored it.
+Direction: "We send" = server -> device.  "Device sends" = device -> server (on its own).
+
+
+------------------------------------------------------------
+DEVICE INFO
+------------------------------------------------------------
+0001  Get serial number                                   [TESTED 2026-10-02]
+      We send : (nothing extra)
+      Answer  : BB900021 (answered on every connect since 2026-10-02 10:12).
+      Notes   : on 2026-09-30 and once at 10:04 on 2026-10-02 it got no reply. Each time it was the
+                very first command after connecting, before the tool had seen the device's frame
+                format. It's answered when sent in ASCII with the FF x8 ID block.
+
+0002  Get firmware version                                [TESTED 2026-09-30]
+      We send : (nothing extra)
+      Answer  : 0004 = firmware version 4
+
+0202  Count users and records                             [TESTED 2026-09-30]
+      We send : (nothing extra)
+      Answer  : 1 user, 32 records  (2026-10-02: 50 records; every door open adds one)
+      Notes   : the count jumped around after restarts (40 -> 32 overnight, 53 -> 45, 71, 75), but at 13:30
+                it matched the real stored list exactly (75, read with 0213). Nothing was lost.
+                (reply is 8 bytes: 4 bytes users + 4 bytes records; spec said 2+2)
+
+0003  Firmware update - start                             [NOT TESTED] (risky, don't test)
+0004  Firmware update - send data                         [NOT TESTED] (risky, don't test)
+
+
+------------------------------------------------------------
+DEVICE SENDS ON ITS OWN
+------------------------------------------------------------
+0101  Heartbeat ("I'm alive")                             [TESTED 2026-09-30]
+      Device sends : every 60 s. Includes the device clock + one extra byte (BB).
+      We reply     : acknowledgement (the tool does this automatically)
+      Notes        : if we don't reply, the device resends every 1 s.
+                     Device clock was wrong: 2026-09-16 02:34 (real 2026-09-30 21:48).
+                     Clock bytes order: sec min hour weekday day month year (BCD), e.g.
+                     22 04 10 05 02 10 26 = 2026-10-02 (Fri = 05) 10:04:22.
+                     CLOCK FALLS BEHIND (2026-10-02, measured over the whole day): synced 10:23:44,
+                     -0.6 s at 10:26, -8.3 s at 12:54. It loses ~1-2 s each time the device reconnects
+                     (every server restart) and ~3-4 s per hour while connected. With the server off
+                     11:05-12:41 it lost only 0.1 s. (An earlier "8 min/day" estimate was wrong; it was
+                     based on 10 minutes that included reconnects.)
+                     -> The server must re-sync the clock (0103) often, or time-limited QR codes break.
+
+0214  Door-event record upload                            [TESTED 2026-09-30]
+      Device sends : after connecting, uploaded all 32 stored records, 1 per second
+      We reply     : acknowledgement (automatic), then the device sends the next one
+      Notes        : 28 exit-button presses (type 80), 4 PIN entries (type 21, state FF = probably wrong PIN)
+                     Keypad PIN record (2026-10-03): 21 EC|FF + the TYPED PIN as a number (4 bytes) + time,
+                     e.g. 21EC 0009FBF1 00000000 261003200027 = PIN 654321 accepted. Wrong PINs are sent too (FF).
+                     2026-10-02 10:48: the same record (10:48:25) arrived TWICE, 5 s apart, though
+                     we acked the first. -> The server must ignore duplicate records.
+
+0109  Door sensor open/closed                             [NOT TESTED]
+      Device sends : 01 = door open, 00 = door closed (repeats every 5 s until we reply)
+
+0108  Doorbell / room call                                [NOT TESTED]
+      Device sends : room number typed on keypad
+      We reply     : 01 = open door, 00 = don't open
+
+0215  Ask server: allow this card / PIN / QR?             [TESTED 2026-09-30, partly]
+      Device sends : in QR online mode, ANY scanned QR is forwarded as-is:
+                     50 ('P' = QR) + the QR text.  e.g. "Phttps://randomqr.com"
+      We reply     : "0215 status 00" (allow) sent 14 s and 4 s after the scan -> lock did NOT open.
+                     (our encrypted QR IS forwarded: P + 152 hex chars; the server decrypts it OK)
+                     "0215 status 00" alone, even sent instantly (auto rules): lock did NOT open.
+                     -> "0215 status 00" does not open the door by itself.
+                     Fix: also send 0201 unlock 0.3 s later -> door opens (see 0201).
+      No reply (2026-10-02, policy manual): the device does nothing. No beep, no retry
+                     (0215 is sent only once), no deny. Allow clicked 73 s later still opened the door,
+                     because 0201 works at any time; the device doesn't tie it to the scan.
+      Server down (app.py stopped): scanning a QR does nothing and the door stays shut
+                     (online mode = the device can't decide on its own). Observed by Naman.
+                     After the server came back (10:50 and 10:52): the missed scans were NOT sent,
+                     and no record was stored for them (record count stayed 53). They are lost.
+
+
+------------------------------------------------------------
+TIME & SETTINGS
+------------------------------------------------------------
+0102  Beep (1, 2 or 3 times)                              [NOT TESTED]
+0103  Set device clock                                    [TESTED 2026-09-30]
+      We send : 7 bytes BCD, sec min hour weekday day month year (same order as the heartbeat)
+      Answer  : OK. The heartbeat clock then showed the correct time.
+      Notes   : the clock drifts slow afterwards (see 0101), so re-sync regularly.
+0104  Set device "valid from" date                        [NOT TESTED]
+0105  Set device "valid until" date                       [NOT TESTED]
+0106  Verification mode for card/PIN                      [TESTED 2026-10-03, QR effect only]
+      00 = offline (device decides), 01 = online (server decides), 02 = mixed (factory default)
+      We send : 02 -> OK.
+      Notes   : does NOT give QR codes a mixed mode. With 0106 = 02 and 0602 = 01: registered member B2
+                opened locally (50EC), unknown member 00000001 refused (50FF, 3 beeps), NOT passed to the
+                server (no 0215). Card/PIN behaviour itself not tested.
+0107  Open mode                                           [NOT TESTED]
+      01 = card only, 02 = PIN only, 03 = card or PIN
+0203  Door relay hold time (seconds)                      [TESTED 2026-10-02, partly]
+      We send : 03 = 3 s  (FF = toggle mode)
+      Answer  : OK
+      Notes   : doesn't change a 0201 open that carries its own seconds (0201 05 still opened 5 s).
+                It IS the time used by 0201 00 (3 s, 2026-10-02).
+                Still to test: does it apply to offline QR, card/PIN, exit button? Toggle mode FF.
+0204  Time-limit feature on/off                           [TESTED 2026-10-02]
+      We send : 01 = on, 02 = off
+      Answer  : OK both ways.
+      Notes   : turning it on did NOT make offline QR codes check their start time/duration
+                (QR that ended yesterday still opened). Set back to 02.
+0205  Heartbeat interval (seconds)                        [NOT TESTED]   (currently 60 s by default)
+
+
+------------------------------------------------------------
+DOOR & RECORDS
+------------------------------------------------------------
+0201  Unlock door (remote open)                           [TESTED 2026-09-30, open time 2026-10-02]
+      We send : seconds (00 = default time)
+      Answer  : OK, and the magnetic lock releases. The lock wiring is confirmed.
+      Notes   : after the unlock the device logs a 0214 record, type 70 ("back door" = remote open).
+                Open time is set by the seconds we send: 01, 02 and 05 all worked (2026-10-02).
+                This is the ONLY way to open the door for an online QR (0215 "allow" alone doesn't open).
+                0201 with 00 (default delay), sent in the same instant as a 0215 reply,
+                got NO reply and the lock did not open. The tool now sends 0201 0.3 s later,
+                with "Unlock seconds" from the Access tab (default 5).
+                0201 00 sent ON ITS OWN (2026-10-02 10:26): OK, door opened for the 0203 time
+                (3 s, observed by Naman). So "00 = default time" works; it failed before only because
+                it was sent in the same instant as the 0215 reply.
+0210  Read new (not yet uploaded) records                 [TESTED 2026-10-03, partly]
+      Answer  : with an empty log (after 0212): no reply at all. With records: not tried
+                (batched like 0211, so probably the same ack problem).
+0211  Read all records                                    [TESTED 2026-10-02, NOT USABLE -> use 0213]
+      We send : (nothing extra)
+      Answer  : records in batches of 8 (16 bytes each, 128 bytes per batch), OLDEST first
+                (first record: exit button 2026-09-13 00:11:40, from before the clock was set).
+      Notes   : the device waits for our ack (FA 0211 Type 02) before sending the next batch.
+                The tool did not ack the first batch (bug, fixed 2026-10-02), so only 8 came.
+                13:15 retry WITH our ack (FA 0211 Type 02, no data): still only the first 8, nothing after.
+                So the ack format is wrong. The manual only says "each response is 88 bytes" (unclear).
+                Record count now 75.
+                13:17 sending 0211 again: the SAME first 8 again, then the device re-sent that batch every 5 s
+                (it is waiting for an ack it accepts).
+                13:20 tried 8 ack formats (type 02 after 0.4 s, type 03, data 08, status 01, last record,
+                head AF, whole batch echoed, type 01 data 01): NONE accepted. Use 0213 instead.
+                Also tried ChatGPT's suggestion (ack with checksum 0180 kept from the request = wrong
+                checksum): no next batch either.
+0212  Erase all records                                   [TESTED 2026-10-03] (destructive)
+      We send : (nothing extra)
+      Answer  : OK, but only after ~15 s (sent 12:26:35, OK 12:26:51). The tool's 3 s wait reported
+                "no reply"; tool now waits 30 s for 0212/0503. Backup taken first (121 records).
+                Check after: Download all records -> 0 records (0213 0000 = all FF).
+0213  Read one record by number                           [TESTED 2026-10-02]
+      We send : 2 bytes record number, counting from 0000 (oldest)
+      Answer  : that 16-byte record. Past the last one: all FF (= end of list).
+      Notes   : read all 75 records this way (0000..004A; 004B = FF). This is how to download the
+                full history (tool: Commands tab -> "Download all records"). One request got no reply
+                (retry works). Result: every record the server got live is also stored; nothing lost.
+
+
+------------------------------------------------------------
+USERS / CARDS / PINS
+------------------------------------------------------------
+0501  Add one user (card and/or PIN)                      [TESTED 2026-10-02]
+      We send : 16 bytes: card(4) PIN(4) userID(2) group(1) days(1) from(2) until(2)
+                e.g. 000000A0 00000000 00A0 00 7F 0000 059F
+                = card 000000A0, no PIN, user ID 0x00A0, no time group, every day, 00:00-23:59
+      Answer  : status 00 = OK (users 1 -> 2). 1 = duplicate card, 2 = duplicate PIN, 3 = duplicate user ID.
+      Notes   : NEEDED FOR OFFLINE QR: the QR's user ID must be a card number in this list.
+                PIN = the keypad number stored as hex: 654321 -> 0009FBF1 (2026-10-03: user D1
+                000000D10009FBF100D1007F0000059F -> OK; typing 654321 on the keypad opens the door).
+0502  Delete user (by card, PIN or ID)                    [TESTED 2026-10-02, type 01]
+      We send : 1 byte type + 4 bytes key. 01 = by card number, 02 = by PIN, 03 = by user ID
+                e.g. 01 000000B3 = delete card 000000B3
+      Answer  : OK. User count stays the same (5): type 01 removes only the CARD from the user
+                entry; the entry (user ID 00B3, PIN FFFFFFB3) stays.
+      Notes   : offline QR for 000000B3 refused right after (3 beeps, 0214 50FF...B3). Removing a
+                member's card stops their offline QR codes immediately.
+                Type 03 = delete the whole user by USER ID, written FIRST in the 4 bytes:
+                  03 000000B3 -> status 1 (failed);  03 00B30000 -> OK (entry gone: deleting its PIN then
+                  failed, and re-adding the same card + PIN succeeded).
+                The user count (0202) never goes down: 5 after deletes, 6 after re-adding B3.
+                It counts entries ever added, not current users. Whether deleted slots are reused is unknown.
+                Right after a power-up 0202 can read too low (5 / 106 at 18:53), then back to 6 / 121 next day.
+0503  Erase ALL users                                     [TESTED 2026-10-03] (destructive)
+      We send : (nothing extra)
+      Answer  : OK after ~20 s (sent 12:31:29, OK 12:31:49). Then 0202: users 0 (count reset to 0,
+                so this also clears the empty slots of deleted users). Backup: device-users-20261003.json.
+0504  Add up to 16 users at once                          [TESTED 2026-10-03]
+      We send : 1 byte count + count x 16-byte user records (same layout as 0501)
+                e.g. 02 000000C1FFFFFFC100C1007F0000059F 000000C2FFFFFFC200C2007F0000059F
+      Answer  : OK (status 00, no data); users 6 -> 8. One reply, no batch/ack involved.
+0505  Read all users                                      [TESTED 2026-10-03]
+      We send : (nothing extra)
+      Answer  : all user slots in one batch (up to 16 per batch), 16 bytes each. With 6 slots: 96 bytes.
+                Saved as device-users-20261003.json.
+      Notes   : DO NOT ACK THE BATCH. Our ack (FA 0505 Type 02) makes the device re-send the batch
+                immediately; with the tool's auto-ack that became an endless loop (101 times in 8 s,
+                11:55:03-11:55:11) and the device's network part reconnected at 11:55:17. Nothing lost.
+                Tool fixed: batch auto-ack is now OFF by default. Re-run after the fix (11:58:43):
+                one reply with the same 6 slots, no repeats, no loop.
+                A DELETED user stays as an EMPTY slot (all 00) and is NOT reused: B3, deleted and
+                re-added, got a new slot after it. The user count (0202) = number of slots.
+
+
+------------------------------------------------------------
+QR CODE
+------------------------------------------------------------
+0601  Set QR encryption key                               [TESTED 2026-09-30]
+      We send : 32 key characters as ASCII
+      Answer  : OK (test key FF20ADBC...238E loaded)
+0602  QR mode                                             [TESTED 2026-09-30]
+      OFFLINE QR WORKS (2026-10-02 17:43), set with 0602 = 01. Requirements:
+                - key used as ascii32 + QR as hex text (raw16 + hex: no reaction at all)
+                - the QR user ID must be a card number added with 0501 (otherwise 3 beeps, refused)
+      Device sends : 0214 type 50 + member card number for every offline scan;
+                     state EC = accepted (door opens), FF = refused (unknown member).
+                     Refused for expiry / use limit: nothing is sent.
+      Checks       : user list, account validity (to the second), use limit. NOT the QR start+duration.
+      Time zone    : the device reads its clock as UTC+8 (China). With India time on the clock,
+                     write QR times as real time - 2.5 h (9000 s).
+      Short-lived QR: account validity = now - 9000 s + 2 min -> opens, refused after 2 min (tested 18:19).
+      01 = offline (device checks QR itself), 02 = online (sent to server)
+      Answer  : 02 -> OK. The device now forwards every QR it reads to the server (see 0215).
+      Note    : our encrypted QR (152 chars, dense) is NOT read by the scanner (no beep);
+                a simple website QR IS read (beep + 0215).

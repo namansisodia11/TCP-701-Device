@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TCP-701 Tester</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="bar">
+  <strong class="brand">TCP-701 Tester</strong>
+  <span id="led" class="led off" title="connection"></span>
+  <span id="statusText" class="muted">disconnected</span>
+  <span class="sep"></span>
+  <span class="group" title="Device in TCP Client mode connects to this PC">
+    <b>Server</b> port <input id="listenPort" value="8888" size="5">
+    <button id="btnListen" class="primary">Listen</button>
+    <span class="muted">device Target IP → <b id="pcIps" class="mono">…</b></span>
+  </span>
+  <span class="sep"></span>
+  <details class="group">
+    <summary class="muted">or connect to device (TCP Server mode)</summary>
+    <label>IP <input id="host" value="192.168.3.7" size="13"></label>
+    <label>Port <input id="port" value="8887" size="5"></label>
+    <button id="btnConnect">Connect</button>
+    <button id="btnProbe" title="Check IP:port; shift-click scans the whole /24">Probe</button>
+  </details>
+  <button id="btnDisconnect">Stop</button>
+  <span class="sep"></span>
+  <span class="kv">Device SN <b id="devSn" class="mono">—</b></span>
+  <span class="kv">Header serial <input id="hdrSerial" value="00000001" size="8"></span>
+  <label class="kv">Req type
+    <select id="reqType"><option value="1">01 (spec)</option><option value="0">00</option></select>
+  </label>
+  <label class="kv" title="How frames are written on the wire. The real device uses ASCII hex text.">Wire
+    <select id="wireMode"><option value="auto">auto</option><option value="ascii">ASCII hex</option><option value="binary">binary</option></select>
+    <b id="wireNow" class="mono"></b>
+  </label>
+  <label class="kv" title="8-byte ID block after the head byte (real device sends FF×8; not in the spec)">ID block
+    <select id="prefixMode"><option value="echo">copy device's</option><option value="none">none</option><option value="ff8">FF×8</option></select>
+  </label>
+</header>
+
+<main>
+  <section class="traffic">
+    <div class="toolbar">
+      <input id="filter" placeholder="filter: cmd / text / hex">
+      <label><input type="checkbox" id="hideHb" checked> hide heartbeats</label>
+      <label><input type="checkbox" id="onlyRx"> only ←device</label>
+      <label><input type="checkbox" id="pause"> pause</label>
+      <button id="btnClear">Clear view</button>
+      <a id="btnExport" href="/api/log/export" class="button">Export log</a>
+      <span id="count" class="muted"></span>
+    </div>
+    <div class="tablewrap" id="tablewrap">
+      <table id="traffic">
+        <thead><tr><th>#</th><th>time</th><th>dir</th><th>cmd</th><th>name</th><th>type</th><th>st</th><th>✓</th><th>decoded</th><th>note</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="detail" id="detail"><span class="muted">Click a row to see the frame broken into fields.</span></div>
+  </section>
+
+  <aside class="panel">
+    <nav class="tabs">
+      <button data-tab="access" class="active">Access</button>
+      <button data-tab="qr">QR</button>
+      <button data-tab="door">Door</button>
+      <button data-tab="quick">Commands</button>
+      <button data-tab="raw">Raw</button>
+      <button data-tab="notes">Notes</button>
+    </nav>
+
+    <!-- ============================ ACCESS (server decisions) -->
+    <div class="tab active" id="tab-access">
+      <h3>Device verification mode</h3>
+      <div class="row">
+        <label>0106 card/PIN
+          <select id="mode0106"><option value="00">00 offline (device decides)</option><option value="01">01 online (server decides)</option><option value="02" selected>02 mixed</option></select>
+        </label>
+        <button id="btnMode0106">Set</button>
+      </div>
+      <div class="row">
+        <label>0602 QR
+          <select id="mode0602"><option value="01">01 offline (device decrypts)</option><option value="02" selected>02 online (sent to server)</option></select>
+        </label>
+        <button id="btnMode0602">Set</button>
+      </div>
+      <p class="hint">Online/mixed → every scan the device can't decide arrives as a <b>0215 request</b> below and waits for our answer.</p>
+
+      <h3>Our server's decision</h3>
+      <div class="grid2">
+        <label>Policy
+          <select id="accPolicy">
+            <option value="manual">manual — I click Allow/Deny</option>
+            <option value="rules">rules — allow list + QR checks</option>
+            <option value="allow">allow everything</option>
+            <option value="deny">deny everything</option>
+          </select>
+        </label>
+        <label>How to grant
+          <select id="accGrant">
+            <option value="status">0215 reply status 00</option>
+            <option value="0201">0201 unlock command</option>
+            <option value="both">both</option>
+          </select>
+        </label>
+        <label>Unlock seconds (0201) <input id="accUnlockSec" type="number" value="5" min="0" max="254" title="How long the door opens on allow. 0 = device default (0203), untested"></label>
+        <label>Beeps on deny (0102)
+          <select id="accDenyBeeps"><option value="0">off</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+        </label>
+        <label>Door no. (QR check) <input id="accDoor" value="1"></label>
+        <label>&nbsp;<button id="btnAccSave" class="primary">Apply</button></label>
+      </div>
+      <label class="stack">Allow list (card hex, PIN, or QR card ID — one per line)
+        <textarea id="accAllow" rows="3" placeholder="36F2E63F&#10;123456"></textarea>
+      </label>
+      <label><input type="checkbox" id="accQrList"> QR card ID must also be in the allow list</label>
+      <p class="hint">The deny reply is always <code>0215 status 01</code>. Use grant = <b>both</b>: the 0215 reply alone doesn't open the door; the 0201 unlock opens it for <i>Unlock seconds</i>.</p>
+
+      <h3>Pending requests <span id="pendingCount" class="badge">0</span></h3>
+      <div id="pendingList"><p class="muted">None. Scan a card / QR at the device.</p></div>
+      <h3>Recent decisions</h3>
+      <div id="accessHistory" class="out small">—</div>
+    </div>
+
+    <!-- ============================ QR -->
+    <div class="tab" id="tab-qr">
+      <h3>1 · Key</h3>
+      <div class="row">
+        <label class="grow">QR key (32 hex chars)<input id="qrKey" class="mono"></label>
+        <button id="btnKeyRandom">Random</button>
+        <button id="btnKeyLoad" class="primary" title="Sends 0601 and remembers the key for server-side decryption">Load to device (0601)</button>
+      </div>
+      <p id="keyState" class="warn-text"></p>
+      <div class="grid2">
+        <label>RC4 key format <select id="qrKeyFmt"><option value="raw16">raw16 (16 bytes)</option><option value="ascii32">ascii32 (32 chars)</option></select></label>
+        <label>QR content <select id="qrContentFmt"><option value="hex_text">hex text (152 chars)</option><option value="binary">binary (76 bytes)</option></select></label>
+      </div>
+
+      <h3>2 · Payload</h3>
+      <div class="grid2">
+        <label>Card / user ID (hex) <input id="qrCard" value="00000001" class="mono"></label>
+        <label>Device SN (hex) <input id="qrSn" value="00000001" class="mono"></label>
+        <label>Doors (e.g. 1 or 1,2) <input id="qrDoors" value="1"></label>
+        <label>Use limit (0 = ∞) <input id="qrLimit" type="number" value="0" min="0" max="9"></label>
+        <label>Valid from <input id="qrStart" type="datetime-local" step="1"></label>
+        <label>Duration (min, ≤2880) <input id="qrDur" type="number" value="5" min="1" max="2880"></label>
+        <label>Account valid until <input id="qrValidity" type="datetime-local" step="1"></label>
+        <label>Card type <input id="qrCardType" value="01" class="mono"></label>
+      </div>
+      <div class="btns presets">
+        <button data-preset="valid" class="primary">Valid</button>
+        <button data-preset="expired">Expired</button>
+        <button data-preset="future">Future start</button>
+        <button data-preset="wrongsn">Wrong SN</button>
+        <button data-preset="badcrc">Bad CRC</button>
+        <button data-preset="wrongkey">Wrong key</button>
+        <button data-preset="door2">Door 2 only</button>
+        <button data-preset="limit1">Limit 1</button>
+        <button data-preset="acctexp">Account expired</button>
+        <button data-preset="form" title="Use the form exactly as filled in">Generate from form</button>
+      </div>
+      <p class="hint">Each preset fills the form from "now" and generates. <b>Sync device time</b> first (Door tab).</p>
+
+      <div id="qrOut" class="qrout" hidden>
+        <div class="qrcard" id="qrCardBox" title="click for fullscreen"><div id="qrSvg"></div><div id="qrLabel" class="qrlabel"></div></div>
+        <div class="btns">
+          <button id="btnQrFull">Fullscreen</button>
+          <button data-result="opened" class="ok">✔ Opened</button>
+          <button data-result="denied" class="bad">✖ Denied</button>
+          <button data-result="nothing">∅ No reaction</button>
+        </div>
+        <input id="qrResultNote" placeholder="optional note (beep, LED colour, delay…)">
+        <details><summary>Payload details</summary>
+          <table class="kvtable" id="qrFields"></table>
+          <div class="out small" id="qrContent"></div>
+        </details>
+      </div>
+
+      <h3>Decode a QR (e.g. vendor app)</h3>
+      <textarea id="qrDecodeIn" rows="2" placeholder="paste QR text (hex)"></textarea>
+      <div class="btns"><button id="btnQrDecode">Decode with key above</button></div>
+      <pre id="qrDecodeOut" class="out small" hidden></pre>
+    </div>
+
+    <!-- ============================ DOOR -->
+    <div class="tab" id="tab-door">
+      <h3>Door</h3>
+      <div class="row">
+        <label>Seconds (0 = default) <input id="unlockSec" type="number" value="0" min="0" max="255"></label>
+        <button id="btnUnlock" class="primary">0201 Unlock</button>
+      </div>
+      <div class="btns">
+        <button data-cmd="0102" data-data="01">Beep ×1</button>
+        <button data-cmd="0102" data-data="02">Beep ×2</button>
+        <button data-cmd="0102" data-data="03">Beep ×3</button>
+        <button id="btnSyncTime" class="primary">0103 Sync time = now</button>
+      </div>
+      <h3>Settings</h3>
+      <div class="row"><label>0203 relay hold (s, FF=toggle) <input id="relaySec" value="03" class="mono" size="4"></label><button id="btnRelay">Set</button></div>
+      <div class="row"><label>0205 heartbeat interval (s) <input id="hbSec" type="number" value="30"></label><button id="btnHb">Set</button></div>
+      <div class="row"><label>0107 open mode <select id="openMode"><option value="01">01 card only</option><option value="02">02 PIN only</option><option value="03" selected>03 card or PIN</option></select></label><button id="btnOpenMode">Set</button></div>
+      <div class="row"><label>0204 time limit <select id="timeLimit"><option value="01">01 on</option><option value="02" selected>02 off</option></select></label><button id="btnTimeLimit">Set</button></div>
+      <h3>Auto-acknowledge</h3>
+      <div class="checks">
+        <label><input type="checkbox" data-auto="0101"> 0101 heartbeat</label>
+        <label><input type="checkbox" data-auto="0109"> 0109 door sensor</label>
+        <label><input type="checkbox" data-auto="0214"> 0214 realtime log</label>
+        <label title="Keep OFF: the device never accepts this ack, and for 0505 it causes an endless resend loop"><input type="checkbox" data-auto="batch"> log/user batches (keep off)</label>
+      </div>
+      <div class="row"><label>0108 doorbell reply <select id="auto0108"><option value="off">off (manual)</option><option value="open">open door</option><option value="deny">don't open</option></select></label></div>
+      <p class="hint">Untick heartbeat to test "3 missed heartbeats → uploads pause" (2.7).</p>
+    </div>
+
+    <!-- ============================ COMMANDS -->
+    <div class="tab" id="tab-quick">
+      <h3>Identify</h3>
+      <div class="btns">
+        <button data-cmd="0001">0001 Serial</button>
+        <button data-cmd="0002">0002 Version</button>
+        <button data-cmd="0202">0202 Counts</button>
+        <button data-cmd="0101">0101 Heartbeat</button>
+        <button data-cmd="0210">0210 New logs</button>
+      </div>
+      <h3>Stored door records</h3>
+      <div class="row"><button id="btnRecords" class="primary">Download all records (0213, one by one)</button> <span id="recordsInfo" class="muted"></span></div>
+      <h3>Any command (waits for reply)</h3>
+      <div class="row">
+        <label>Cmd <select id="anyCmd"></select></label>
+        <label>Data hex <input id="anyData" placeholder="e.g. 05"></label>
+        <button id="btnAny" class="primary">Send</button>
+      </div>
+      <h3>Last reply</h3>
+      <pre id="lastReply" class="out">—</pre>
+    </div>
+
+    <!-- ============================ RAW -->
+    <div class="tab" id="tab-raw">
+      <h3>Raw hex</h3>
+      <textarea id="rawHex" rows="3" placeholder="FA 0000 0000 00000001 0001 01 00"></textarea>
+      <label><input type="checkbox" id="rawFix" checked> recompute length + checksum</label>
+      <div class="btns"><button id="btnRaw" class="primary">Send raw</button></div>
+      <h3>Field builder</h3>
+      <div class="grid2">
+        <label>Head <select id="bHead"><option>FA</option><option>AF</option></select></label>
+        <label>Serial <input id="bSerial" placeholder="(top bar)"></label>
+        <label>Cmd <input id="bCmd" value="0002"></label>
+        <label>Type <select id="bType"><option value="0">00 req</option><option value="1" selected>01 req*</option><option value="2">02 resp</option><option value="3">03 event</option></select></label>
+        <label>Status (hex) <input id="bStatus" value="00"></label>
+        <label>Data hex <input id="bData"></label>
+      </div>
+      <label><input type="checkbox" id="bBad"> deliberately wrong checksum</label>
+      <div class="btns">
+        <button id="btnBuild" class="primary">Build &amp; send</button>
+        <button id="btnDouble">0002+0202 in one write</button>
+      </div>
+    </div>
+
+    <!-- ============================ NOTES -->
+    <div class="tab" id="tab-notes">
+      <h3>Test note → session log</h3>
+      <textarea id="noteText" rows="4" placeholder="e.g. 3.7: raw16 + hex_text opened the door"></textarea>
+      <div class="btns"><button id="btnNote" class="primary">Save note</button></div>
+      <p class="hint">Notes are timestamped in the same JSONL log as the frames.</p>
+    </div>
+  </aside>
+</main>
+
+<div id="fullscreen" hidden>
+  <div id="fsSvg"></div><div id="fsLabel"></div>
+  <div class="fsctl"><button id="fsSmaller">−</button><span id="fsSize"></span><button id="fsBigger">+</button><button id="fsClose">Close</button></div>
+  <p>Spec: ~2.5 cm on screen; too large will not scan up close. Max brightness.</p>
+</div>
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

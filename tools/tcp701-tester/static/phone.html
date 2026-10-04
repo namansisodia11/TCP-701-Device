@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>TCP-701 QR</title>
+<style>
+  :root { --ok: #15803d; --bad: #b91c1c; --warn: #b45309; --line: #d9dee5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: #111; font: 16px/1.4 system-ui, sans-serif; text-align: center; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  #state { font-weight: 600; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); }
+  #qrBox { padding: 20px 16px 8px; min-height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  #qrBox svg { height: auto; max-width: 100%; image-rendering: pixelated; }
+  #label { font-size: 13px; color: #555; margin-top: 6px; }
+  .row { display: flex; gap: 8px; padding: 6px 16px; flex-wrap: wrap; justify-content: center; align-items: center; }
+  button { font: inherit; padding: 12px 10px; border-radius: 10px; border: 1px solid var(--line); background: #f3f4f6; color: #111; flex: 1 1 30%; min-width: 96px; }
+  button.main { background: #2563eb; color: #fff; border-color: #2563eb; flex-basis: 100%; font-weight: 600; }
+  button.r-ok { color: var(--ok); border-color: var(--ok); } button.r-bad { color: var(--bad); border-color: var(--bad); }
+  .size button { flex: 0 0 56px; min-width: 0; }
+  input, select { font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  label.f { flex: 1 1 45%; font-size: 13px; text-align: left; color: #555; }
+  label.f input, label.f select { width: 100%; margin-top: 2px; }
+  h4 { margin: 16px 0 2px; font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: .05em; }
+  .hint { font-size: 12px; color: #777; margin: 0 16px; }
+  #toast { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: #111; color: #fff; padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; }
+  #toast.show { opacity: .9; }
+</style>
+</head>
+<body>
+<header>Device <b id="sn">…</b> · <span id="state">checking key…</span></header>
+
+<div id="qrBox"><div id="qr" class="warn">Choose a QR below</div><div id="label"></div></div>
+<div class="row"><label class="f" style="flex:1 1 100%">SN in QR (any value; offline ignores it, online the server reads it)
+  <input id="qrSn" value="BB900021" maxlength="8" autocapitalize="characters" spellcheck="false"></label></div>
+<div class="row size"><button id="smaller">−</button><span id="sizeText" style="min-width:70px"></span><button id="bigger">+</button></div>
+
+<h4>Offline QR (device checks it, 0602 = 01)</h4>
+<div class="row">
+  <label class="f">Member (on device)
+    <select id="member">
+      <option>000000A0</option><option>000000B1</option><option selected>000000B2</option><option>000000B3</option>
+    </select></label>
+  <label class="f">Valid for (min)
+    <input id="mins" type="number" value="3" min="1" max="1440"></label>
+  <button class="main" data-off="valid">✔ Valid for N minutes</button>
+  <button data-off="expired">Expired</button>
+  <button data-off="once">Use once</button>
+</div>
+<div class="row">
+  <button data-off="wrongsn">Wrong SN</button>
+  <button data-off="door2">Door 2 only</button>
+  <button data-off="badcrc">Bad CRC</button>
+  <button data-off="wrongkey">Wrong key</button>
+</div>
+<p class="hint">Member must be in the device's user list (0501). Expiry is written in the device's clock (China time, −2½ h).</p>
+
+<h4>Online QR (server checks it, 0602 = 02)</h4>
+<div class="row">
+  <button class="main" data-on="valid">✔ Valid (5 min)</button>
+  <button data-on="expired">Expired</button>
+</div>
+
+<h4>Short token QR (online, not encrypted)</h4>
+<div class="row">
+  <input id="txt" placeholder="e.g. GW:1:8F3A2C" autocapitalize="off" autocomplete="off" spellcheck="false" style="flex:1 1 100%">
+  <button id="txtMake" class="main" style="flex-basis:45%">Make text QR</button>
+  <button id="txtToken" style="flex-basis:45%">Random token</button>
+</div>
+
+<h4>What happened?</h4>
+<div class="row">
+  <button class="r-ok" data-r="opened">Opened</button>
+  <button class="r-bad" data-r="denied">Denied</button>
+  <button data-r="nothing">No reaction</button>
+</div>
+<div id="toast"></div>
+
+<script>
+// Phone view: uses the key that was loaded into the device from the PC (server remembers it).
+const $ = (id) => document.getElementById(id);
+const DEVICE_TZ_SHIFT = -9000;  // device reads its clock as UTC+8 while it shows India time (UTC+5:30)
+let st = null, last = null, size = 200;
+try { size = +localStorage.getItem("tcp701.phoneSize") || 200; } catch {}
+
+function toast(t) { $("toast").textContent = t; $("toast").className = "show"; clearTimeout(toast.h); toast.h = setTimeout(() => $("toast").className = "", 2500); }
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || r.statusText);
+  return j;
+}
+
+async function refresh() {
+  st = await api("/api/status");
+  $("sn").textContent = st.device_sn || "not connected";
+  const k = st.access.qr_key;
+  $("state").textContent = k ? "✔ using device key" : "⚠ load key on PC first (QR tab → Load to device)";
+  $("state").className = k ? "ok" : "warn";
+}
+
+function applySize() {
+  const svg = $("qr").querySelector("svg");
+  if (svg) svg.style.width = size + "px";  // height follows via viewBox; max-width keeps it on screen
+  $("sizeText").textContent = size + " px";
+}
+
+function show(svg, text) {
+  $("qr").className = "";
+  $("qr").innerHTML = svg;
+  $("label").textContent = text;
+  applySize();
+}
+
+async function make(mode, kind) {
+  await refresh();
+  if (!st.access.qr_key) return toast("No key loaded in device yet — do it on the PC");
+  const now = Math.floor(Date.now() / 1000);
+  const p = { key: st.access.qr_key, key_format: st.access.qr_key_format, content_format: "hex_text",
+    card_id: "00000001", device_sn: ($("qrSn").value.trim().toUpperCase() || st.device_sn || "00000001").padStart(8, "0"), doors: [1],
+    start: now - 60, duration_min: 5, validity: now + 365 * 86400, limit: 0 };
+  let what;
+  if (mode === "off") {
+    // The device ignores start/duration offline; the account validity is the real timer (in device time).
+    const mins = Math.max(1, +$("mins").value || 3);
+    p.card_id = $("member").value;
+    p.start = now + DEVICE_TZ_SHIFT - 60;
+    p.validity = now + DEVICE_TZ_SHIFT + mins * 60;
+    if (kind === "expired") p.validity = now + DEVICE_TZ_SHIFT - 3600;
+    if (kind === "once") p.limit = 1;
+    // security checks: each breaks one thing, everything else valid
+    if (kind === "wrongsn") p.device_sn = ((parseInt(p.device_sn, 16) + 1) >>> 0).toString(16).padStart(8, "0").toUpperCase();
+    if (kind === "door2") p.doors = [2];
+    if (kind === "badcrc") p.bad_crc = true;
+    if (kind === "wrongkey") p.encrypt_key = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+    const until = new Date((now + (kind === "expired" ? -3600 : mins * 60)) * 1000).toLocaleTimeString();
+    what = `OFFLINE ${kind.toUpperCase()} · member ${p.card_id} · ${kind === "expired" ? "expired" : "valid until"} ${until}` + (kind === "once" ? " · 1 use" : "");
+  } else {
+    if (kind === "expired") p.start = now - 3600;
+    what = `ONLINE ${kind.toUpperCase()}`;
+  }
+  const r = await api("/api/qr/generate", p);
+  last = { mode, kind, p, r, what };
+  show(r.svg, mode === "off" ? what : `${what} · ${r.summary.start} → ${r.summary.end}`);
+}
+
+async function makeText(text) {
+  text = text.trim();
+  if (!text) return toast("Type some text first");
+  const r = await api("/api/qr/text", { text });
+  last = { mode: "text", r, what: `TEXT "${text}"` };
+  show(r.svg, `TEXT · "${text}" · ${r.chars} chars`);
+}
+const rndToken = () => "GW:1:" + Array.from(crypto.getRandomValues(new Uint8Array(3)), (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+
+document.querySelectorAll("[data-off]").forEach((b) => b.onclick = () => make("off", b.dataset.off).catch((e) => toast(e.message)));
+document.querySelectorAll("[data-on]").forEach((b) => b.onclick = () => make("on", b.dataset.on).catch((e) => toast(e.message)));
+$("txtMake").onclick = () => makeText($("txt").value).catch((e) => toast(e.message));
+$("txtToken").onclick = () => { $("txt").value = rndToken(); makeText($("txt").value).catch((e) => toast(e.message)); };
+document.querySelectorAll("[data-r]").forEach((b) => b.onclick = async () => {
+  if (!last) return toast("Make a QR first");
+  await api("/api/note", { text: `QR SCAN RESULT (phone): ${b.dataset.r.toUpperCase()} — ${last.what}, shown at ${size} px` }).catch((e) => toast(e.message));
+  toast("Saved: " + b.dataset.r);
+});
+$("smaller").onclick = () => { size = Math.max(100, size - 20); try { localStorage.setItem("tcp701.phoneSize", size); } catch {} applySize(); };
+$("bigger").onclick = () => { size = Math.min(600, size + 20); try { localStorage.setItem("tcp701.phoneSize", size); } catch {} applySize(); };
+applySize();
+refresh().catch((e) => { $("state").textContent = "server not reachable: " + e.message; $("state").className = "warn"; });
+</script>
+</body>
+</html>

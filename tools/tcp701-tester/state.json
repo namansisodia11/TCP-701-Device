@@ -1,0 +1,12 @@
+{
+  "header_serial": "FFFFFFFF",
+  "prefix": "FFFFFFFFFFFFFFFF",
+  "device_sn": "BB900021",
+  "qr_key": "CAD3BD80459C352A3515E3E3268965AC",
+  "qr_key_format": "ascii32",
+  "unlock_seconds": 10,
+  "policy": "rules",
+  "grant": "both",
+  "allow_list": [],
+  "deny_beeps": 3
+}
