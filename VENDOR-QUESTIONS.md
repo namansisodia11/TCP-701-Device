@@ -19,6 +19,8 @@ FAFFFFFFFFFFFFFFFF01810000BB90002102110200
 
 **Question:** What exact response must we send after each 8 records so the device sends the next 8? Please send a complete example frame. Your document says "each response is 88 bytes"; what are these 88 bytes?
 
+**Vendor answer (RESOLVED):** The reply to each batch of 8 records must have command byte **0x38**, not 0x88. The document is wrong ("88" is a typo by their technical staff). If we do not reply with 38, the reader thinks the server did not receive the data and does not send the next batch.
+
 ---
 
 # TCP-701: offline QR code ignores its valid start time and duration
@@ -55,6 +57,10 @@ We **did use the set-time command (0x0103)**: we sent it 4 times (14:59, 15:06, 
 → Why did 0x0103 not fix the record time? Why did it become correct only hours later? What is the right way to fix it if it happens again?
 
 **3.** Why can the device hang during the "set QR key" command, and how should we send it safely?
+
+**Vendor answer (RESOLVED for points 1 and 2):**
+- **Serial number (1):** The machine number was initialized/changed. To reset it, send this command: `FAFFFFFFFFFFFFFFFF08530008FFFFFFFF00000100AFFFAC88BB900021` (sets the machine number back to BB900021). The vendor also asked us to send the complete 0x0601 command we used, to find what caused the initialization. (Point 3 still open: they have asked for the exact 0x0601 frame.)
+- **Record time 4 hours off (2):** Also caused by the changed machine number. The device was sending stored log records instead of real-time swipe records. Correcting the machine number fixes it.
 
 ---
 
