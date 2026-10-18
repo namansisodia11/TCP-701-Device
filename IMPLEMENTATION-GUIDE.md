@@ -259,6 +259,8 @@ Reply 8 bytes: users (4) + records (4). **Unreliable:** too low right after a po
 ## 9a. Device reset: detection and recovery from the server
 **What happened (2026-10-03):** a QR-key load (0601) got no reply, then a power cut. After restart the device had lost **its serial (now `FFFFFFFF`), the QR key and all users**; records were empty and **record timestamps were wrong** (scans at 14:07 stamped 10:04), while the heartbeat clock was right. Offline QR mode survived. Treat this as "the device can lose its settings and user list at any time".
 
+**Fixing a wrong serial:** the vendor command `FA FF×8 <checksum> 0008 <current serial> 0000 01 00 AFFFAC88 <new serial>` (cmd `0000`) rewrites it (tested 2026-10-18, `FFFFFFFF` → `BB900021`). The server must know the intended serial per device (e.g. from the registration packet or its own table).
+
 **Keep the desired state on the server** (the device can't be trusted to keep it):
 - QR key per device (0601), QR mode (0602), card/PIN mode (0106), relay time (0203), time-limit (0204), heartbeat interval (0205)
 - the full user list for that device (pool slots or members), as 16-byte records

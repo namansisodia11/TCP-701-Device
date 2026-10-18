@@ -15,6 +15,14 @@ DEVICE INFO
                 very first command after connecting, before the tool had seen the device's frame
                 format. It's answered when sent in ASCII with the FF x8 ID block.
 
+
+0000  Set machine number / serial (vendor command)        [TESTED 2026-10-18]
+      We send : FAFFFFFFFFFFFFFFFF08530008FFFFFFFF00000100AFFFAC88BB900021
+                = FA | FF x8 | checksum | len 0008 | header serial FFFFFFFF (the current one) | cmd 0000 | type 01 | status 00
+                  | data AFFFAC88 + new serial (4 bytes). Undocumented; given by the vendor on 2026-10-09.
+      Answer  : restored the serial; 0001 and heartbeats show BB900021 again. UI: Commands tab -> "Set serial".
+      Notes   : the header serial must be the serial the device has NOW (FFFFFFFF after the 2026-10-03 incident).
+
 0002  Get firmware version                                [TESTED 2026-09-30]
       We send : (nothing extra)
       Answer  : 0004 = firmware version 4

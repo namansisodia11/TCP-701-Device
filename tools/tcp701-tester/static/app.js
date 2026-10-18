@@ -379,6 +379,16 @@ function bind() {
   document.querySelectorAll("[data-auto]").forEach((cb) => (cb.onchange = run(() => api("/api/settings", { auto: { [cb.dataset.auto]: cb.checked } }))));
   $("auto0108").onchange = run(() => api("/api/settings", { auto: { "0108": $("auto0108").value } }));
 
+  $("btnSetSerial").onclick = run(async () => {
+    const cur = $("serCur").value.trim(), nw = $("serNew").value.trim();
+    if (!confirm(`Rewrite the device serial number ${cur} -> ${nw}?`)) return;
+    const r = await api("/api/set_serial", { current_serial: cur, new_serial: nw });
+    toast("sent " + r.sent);
+    await new Promise((res) => setTimeout(res, 1500));
+    await api("/api/settings", { header_serial: nw });
+    await sendCmd("0001");
+  });
+
   // raw
   $("btnRaw").onclick = run(async () => {
     const r = await api("/api/raw", { hex: $("rawHex").value, fix_checksum: $("rawFix").checked });

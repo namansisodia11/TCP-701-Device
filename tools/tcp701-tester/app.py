@@ -181,6 +181,28 @@ async def cmd(req: CmdReq):
     return {"reply": frame_json(f)}
 
 
+class SerialReq(BaseModel):
+    new_serial: str = "BB900021"  # 8 hex chars
+    current_serial: str = "FFFFFFFF"  # serial the device has now (header serial)
+
+
+@app.post("/api/set_serial")
+async def set_serial(req: SerialReq):
+    """Vendor command to rewrite the machine number (answer of 2026-10-09):
+    FA + FF*8 + ck + len 0008 + serial + cmd 0000 + type 01 + status 00 + AFFFAC88 + new serial."""
+    if not link.connected:
+        raise HTTPException(409, "not connected")
+    try:
+        new, cur = bytes.fromhex(req.new_serial), int(req.current_serial, 16)
+    except ValueError:
+        raise HTTPException(400, "serials must be 8 hex characters")
+    if len(new) != 4:
+        raise HTTPException(400, "new serial must be 8 hex characters")
+    data = p.build(0x0000, bytes.fromhex("AFFFAC88") + new, cur, 1, 0, prefix=bytes([0xFF]) * p.PREFIX_LEN)
+    await link.send(data, "vendor: set machine number")
+    return {"sent": data.hex().upper()}
+
+
 @app.post("/api/raw")
 async def raw(req: RawReq):
     """Send arbitrary bytes; optionally recompute length+checksum first."""

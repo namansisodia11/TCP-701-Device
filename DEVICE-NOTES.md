@@ -2,7 +2,8 @@
 
 Testing started 2026-09-30. ✔ = confirmed on the real device · ❓ = not confirmed yet
 
-## ⚠ Incident 2026-10-03: serial became FFFFFFFF
+## ⚠ Incident 2026-10-03: serial became FFFFFFFF — FIXED 2026-10-18 ✔
+- **Fix (vendor answer 2026-10-09):** send command `0000` with data `AFFFAC88` + new serial: `FAFFFFFFFFFFFFFFFF08530008FFFFFFFF00000100AFFFAC88BB900021`. Used via the tester UI (Commands tab → Set serial). The device then reported `BB900021` again in 0001, 0002… and heartbeats. The record-time problem was caused by the same wrong serial (vendor).
 - 13:51:42 Load key (0601) got **no reply** (earlier key loads answered at once). 13:57 power cut. After restart the device's serial is **`FFFFFFFF`** (heartbeats and 0001), no longer `BB900021`.
 - Commands carrying the old serial are **silently ignored** (0002, 0202, 0601 no reply); heartbeat acks work because the tool copies the device's serial.
 - Most likely: the key and serial share one settings memory; the key write erased it, didn't finish, and the power cut left it erased (erased memory reads `FF`). The QR key is probably lost too.
@@ -16,7 +17,7 @@ Testing started 2026-09-30. ✔ = confirmed on the real device · ❓ = not conf
 - **Record time and record type recovered ✔ (2026-10-03 19:31):** after Sync time at 19:30:43 one more wrong record came (19:31:02 → 11:11:00, type 50 card 0), then from 19:31:16 the records were **correct** (19:31:14, 19:31:27, 19:31:58; 2 s upload delay) and online QR openings were logged as **type 70** again. Cause unclear (the 14:59 sync didn't help; several restarts in between). Serial still `FFFFFFFF`.
 - **QR mode is kept across a restart ✔:** set to online at 15:05:31; the device reconnected at 15:08:21 (restart); scans after it still went to the server (0215 at 15:08:27…). It does not fall back to offline by default.
 - **The `00000000` records explained:** since the crash, an online QR opening (0215 allow + 0201) is logged as **type `50`, card `00000000`** (before the crash: type `70` remote open). E.g. unlock 15:08:40 → record `50EC…00000000` at 15:08:45. Not a security hole.
-- Neither Reboot nor Restore (web page) brings the serial back; it is stored as `FFFFFFFF` now → vendor.
+- Neither Reboot nor Restore (web page) brings the serial back; only the vendor command above does.
 - Reconnected 14:55 after fixing the network (Target IP had to be re-entered; the first Submit didn't save it). Device now connects from local port 8887.
 - Recovery procedure for the real server: `IMPLEMENTATION-GUIDE.md` §9a.
 - Lessons: take the serial from the device's own messages; identify devices by connection/registration packet too; after settings writes wait for OK and verify.

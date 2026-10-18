@@ -223,6 +223,12 @@
         <button data-cmd="0101">0101 Heartbeat</button>
         <button data-cmd="0210">0210 New logs</button>
       </div>
+      <h3>Set serial number (vendor command)</h3>
+      <div class="row">
+        <label>Current <input id="serCur" value="FFFFFFFF" class="mono" size="9"></label>
+        <label>New <input id="serNew" value="BB900021" class="mono" size="9"></label>
+        <button id="btnSetSerial" class="primary" title="Vendor frame, cmd 0000 + AFFFAC88 + serial; no reply expected, then 0001 is read to verify">Set serial</button>
+      </div>
       <h3>Stored door records</h3>
       <div class="row"><button id="btnRecords" class="primary">Download all records (0213, one by one)</button> <span id="recordsInfo" class="muted"></span></div>
       <h3>Any command (waits for reply)</h3>
@@ -273,6 +279,6 @@
   <p>Spec: ~2.5 cm on screen; too large will not scan up close. Max brightness.</p>
 </div>
 <div id="toast"></div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=2"></script>
 </body>
 </html>

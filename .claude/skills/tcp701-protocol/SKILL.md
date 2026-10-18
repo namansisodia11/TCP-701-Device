@@ -58,6 +58,7 @@ Fail-secure lock (unlocks on power) → COM + NO. Fail-safe maglock (locks on po
 > 2. The device inserts an **8-byte ID block (`FF×8`) right after the head byte**. This is not in the spec:
 >    `Head(1) ID(8) Checksum(2) Length(2) Serial(4) Cmd(2) Type(1) Status(1) Data(N)`. The checksum still covers Length..Data.
 > 3. Unprompted **0101 heartbeat every 60 s once acked (every ~1 s while unacked)**: Type 00, data = 7-byte BCD clock (sec min hour weekday day month year; Fri = 05) + `BB`. The clock was wrong until synced and **falls behind** (~1–2 s per reconnect plus a few s/hour; −8 s after 2.5 h), so re-sync 0103 on connect.
+> 3b. **Undocumented vendor command 0000 rewrites the serial** (tested 2026-10-18): `FA FF×8 ck 0008 <current serial> 0000 01 00 AFFFAC88 <new serial>`; fixed `FFFFFFFF` → `BB900021` after the 2026-10-03 incident (a hung 0601 wiped the serial).
 > 4. The frame's Serial field carries the device serial (`BB900021`), not `00000001`.
 > 5. Host frames **with** the FF×8 ID block and the device serial, sent as ASCII, are answered (0002 → `0004`). 0001 → `BB900021` (answered from 2026-10-02; the first tries got no reply before the format was learned).
 > 6. **0202 reply is 8 bytes**: 4-byte users + 4-byte records (spec says 2+2).

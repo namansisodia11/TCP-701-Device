@@ -58,9 +58,10 @@ We **did use the set-time command (0x0103)**: we sent it 4 times (14:59, 15:06, 
 
 **3.** Why can the device hang during the "set QR key" command, and how should we send it safely?
 
-**Vendor answer (RESOLVED for points 1 and 2):**
+**Vendor answer (RESOLVED for points 1 and 2 — verified on the device 2026-10-18):**
 - **Serial number (1):** The machine number was initialized/changed. To reset it, send this command: `FAFFFFFFFFFFFFFFFF08530008FFFFFFFF00000100AFFFAC88BB900021` (sets the machine number back to BB900021). The vendor also asked us to send the complete 0x0601 command we used, to find what caused the initialization. (Point 3 still open: they have asked for the exact 0x0601 frame.)
 - **Record time 4 hours off (2):** Also caused by the changed machine number. The device was sending stored log records instead of real-time swipe records. Correcting the machine number fixes it.
+- **Verified 2026-10-18:** after the command above the device answers 0001 and every heartbeat with `BB900021` again (the UI "Set serial" button, Commands tab, sends it). Points 1 and 2 are closed; point 3 (why 0601 hangs) is still open.
 
 ---
 
