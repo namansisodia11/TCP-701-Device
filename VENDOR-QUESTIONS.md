@@ -21,6 +21,17 @@ FAFFFFFFFFFFFFFFFF01810000BB90002102110200
 
 **Vendor answer (RESOLVED):** The reply to each batch of 8 records must have command byte **0x38**, not 0x88. The document is wrong ("88" is a typo by their technical staff). If we do not reply with 38, the reader thinks the server did not receive the data and does not send the next batch.
 
+**Follow-up (2026-10-18, NOT working yet):** we tried "38" in every place we could think of. 12 records on the device, `0211` sent, the device sends the first 8 (128 bytes), we ack at once, and the device just repeats the same first 8 on the next `0211`. Acks tried (all with the FF×8 ID block, serial BB900021, head FA):
+| Ack | Frame |
+|---|---|
+| command 0038, type 02 | `FAFFFFFFFFFFFFFFFF01A60000BB90002100380200` |
+| command 0238, type 02 | `FAFFFFFFFFFFFFFFFF01A80000BB90002102380200` |
+| command 0211, type 02, status 38 | `FAFFFFFFFFFFFFFFFF01B90000BB90002102110238` |
+| command 0211, type 02, data 38 | `FAFFFFFFFFFFFFFFFF01BA0001BB9000210211020038` |
+| command 0211, type 38 | `FAFFFFFFFFFFFFFFFF01B70000BB90002102113800` |
+
+**Question:** Please send the **complete hex of one correct ack frame** (including head, ID block, checksum, length, serial, command, type, status and data) for a 0x0211 batch, and say whether the ack must be sent immediately or after a delay.
+
 ---
 
 # TCP-701: offline QR code ignores its valid start time and duration

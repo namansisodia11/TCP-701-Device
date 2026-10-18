@@ -127,6 +127,7 @@ function setStatus(s) {
 
   document.querySelectorAll("[data-auto]").forEach((cb) => (cb.checked = !!s.auto[cb.dataset.auto]));
   $("auto0108").value = s.auto["0108"];
+  if (document.activeElement !== $("batchAck")) $("batchAck").value = s.auto.batch_ack;
   if (!accDirty) {
     $("accPolicy").value = s.access.policy;
     $("accGrant").value = s.access.grant;
@@ -377,6 +378,7 @@ function bind() {
   $("btnOpenMode").onclick = run(() => sendCmd("0107", $("openMode").value));
   $("btnTimeLimit").onclick = run(() => sendCmd("0204", $("timeLimit").value));
   document.querySelectorAll("[data-auto]").forEach((cb) => (cb.onchange = run(() => api("/api/settings", { auto: { [cb.dataset.auto]: cb.checked } }))));
+  $("batchAck").onchange = run(() => api("/api/settings", { auto: { batch_ack: $("batchAck").value } }));
   $("auto0108").onchange = run(() => api("/api/settings", { auto: { "0108": $("auto0108").value } }));
 
   $("btnSetSerial").onclick = run(async () => {

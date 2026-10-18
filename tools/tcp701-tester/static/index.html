@@ -207,8 +207,12 @@
         <label><input type="checkbox" data-auto="0101"> 0101 heartbeat</label>
         <label><input type="checkbox" data-auto="0109"> 0109 door sensor</label>
         <label><input type="checkbox" data-auto="0214"> 0214 realtime log</label>
-        <label title="Keep OFF: the device never accepts this ack, and for 0505 it causes an endless resend loop"><input type="checkbox" data-auto="batch"> log/user batches (keep off)</label>
+        <label title="Keep OFF: the device never accepts this ack, and for 0505 it causes an endless resend loop"><input type="checkbox" data-auto="batch"> log/user batches (turn on only to test 0211)</label>
       </div>
+      <div class="row"><label>Batch ack format (0211/0210/0505) <select id="batchAck">
+        <option value="cmd0038">cmd 0038 (vendor "38")</option><option value="cmd0238">cmd 0238</option>
+        <option value="status38">status 38</option><option value="data38">data 38</option>
+        <option value="type38">type 38</option><option value="plain">plain (old, rejected)</option></select></label></div>
       <div class="row"><label>0108 doorbell reply <select id="auto0108"><option value="off">off (manual)</option><option value="open">open door</option><option value="deny">don't open</option></select></label></div>
       <p class="hint">Untick heartbeat to test "3 missed heartbeats → uploads pause" (2.7).</p>
     </div>
@@ -279,6 +283,6 @@
   <p>Spec: ~2.5 cm on screen; too large will not scan up close. Max brightness.</p>
 </div>
 <div id="toast"></div>
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>

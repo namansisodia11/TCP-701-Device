@@ -59,6 +59,8 @@ class DeviceLink:
                      # off: the device never accepts our batch ack; for 0505 it re-sends the batch at once
                      # on every ack -> endless loop that made the device reconnect (2026-10-03)
                      "batch": False,
+                     # how the batch ack is built (vendor 2026-10-09: reply command must be 0x38, not 0x88)
+                     "batch_ack": "cmd0038",
                      "0108": "off"}  # off | open | deny
         # Server-side access decisions for 0215 real-time verification requests.
         self.access = {
@@ -298,6 +300,8 @@ class DeviceLink:
                 fut = futs.pop(0)
                 if not fut.done():
                     fut.set_result(f)
+                    if f.cmd in (0x0210, 0x0211, 0x0505) and self.auto["batch"]:
+                        await self._auto_reply(f)  # the first batch is the reply to our request but needs an ack too
                     return  # it was a reply to us, not an unsolicited frame
         # 2) unsolicited frame -> access decision / auto reply
         if f.cmd == 0x0215 and f.from_device:
@@ -314,10 +318,26 @@ class DeviceLink:
         elif cmd == 0x0214 and a["0214"]:
             await self.send(self.build(0x0214, b"", f.serial, AUTO_ACK_TYPE[0x0214]), "auto-ack realtime log")
         elif cmd in (0x0210, 0x0211, 0x0505) and a["batch"]:
-            await self.send(self.build(cmd, b"", f.serial, AUTO_ACK_TYPE[cmd]), "auto-ack batch")
+            await self.send(self._batch_ack(cmd, f.serial), f"auto-ack batch ({a['batch_ack']})")
         elif cmd == 0x0108 and a["0108"] in ("open", "deny"):
             d = b"\x01" if a["0108"] == "open" else b"\x00"
             await self.send(self.build(0x0108, d, f.serial, p.TYPE_RESP), f"auto-reply doorbell: {a['0108']}")
+
+    def _batch_ack(self, cmd: int, serial: int) -> bytes:
+        """Ack for a batch of 8 records/16 users. The vendor says the reply 'command' must be 0x38 (not 0x88);
+        which field that is isn't clear, so several readings can be tried from the UI."""
+        v, typ = self.auto["batch_ack"], AUTO_ACK_TYPE[cmd]
+        if v == "cmd0038":
+            return self.build(0x0038, b"", serial, typ)
+        if v == "cmd0238":
+            return self.build(0x0238, b"", serial, typ)
+        if v == "status38":
+            return self.build(cmd, b"", serial, typ, status=0x38)
+        if v == "data38":
+            return self.build(cmd, b"8", serial, typ)
+        if v == "type38":
+            return self.build(cmd, b"", serial, 0x38)
+        return self.build(cmd, b"", serial, typ)  # "plain": the old ack, which was never accepted
 
     # ------------------------------------------------------------------ access control (0215)
     def evaluate(self, data: bytes) -> dict:

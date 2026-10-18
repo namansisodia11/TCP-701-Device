@@ -147,6 +147,11 @@ DOOR & RECORDS
                 13:15 retry WITH our ack (FA 0211 Type 02, no data): still only the first 8, nothing after.
                 So the ack format is wrong. The manual only says "each response is 88 bytes" (unclear).
                 Record count now 75.
+                2026-10-18 (vendor said: ack "command byte" must be 0x38, not 0x88): tried cmd 0038, cmd 0238,
+                0211 with status 38, 0211 with data 38, 0211 with type 38 (tool dropdown "Batch ack format",
+                Door tab). The ack was sent right after the first batch each time (and the first-batch ack bug in the
+                tool is fixed), but the device still repeated the same first 8. NONE accepted -> asked the vendor for
+                a complete example frame (VENDOR-QUESTIONS.md). Keep using 0213.
                 13:17 sending 0211 again: the SAME first 8 again, then the device re-sent that batch every 5 s
                 (it is waiting for an ack it accepts).
                 13:20 tried 8 ack formats (type 02 after 0.4 s, type 03, data 08, status 01, last record,
