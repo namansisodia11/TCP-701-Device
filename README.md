@@ -1,4 +1,4 @@
-# TCP-701 Check-in Hardwarea
+# TCP-701 Check-in Hardware
 
 Testing and integration work for the **TCP-701** networked QR / IC-card access-control reader, which Gymwale plans to use for gym check-in. The device scans a member's QR code (or a card or keypad PIN), asks our server whether to let them in, and drives the door relay (a magnetic lock).
 
